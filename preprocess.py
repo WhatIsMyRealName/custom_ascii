@@ -2,6 +2,14 @@ import numpy as np
 import sys
 import time
 from PIL import Image
+import warnings
+try:
+    from scipy.ndimage import convolve as scipy_convolve
+    scipy_available = True
+except ImportError:
+    scipy_available = False
+    warnings.warn("""\033[93m\nScipy n'est pas disponible. Le paramètre fast est automatiquement corrigé en False.
+Exécutez 'pip install scipy' '!pip install scipy' ou 'py -m pip install scipy' pour pouvoir utiliser fast=True.\033[0m""", category=UserWarning)
 
 def progress_bar(iteration: int, total: int, timing: float, length=80):
     """
@@ -12,7 +20,7 @@ def progress_bar(iteration: int, total: int, timing: float, length=80):
     iteration : int
         Numéro de la tache qu'on est en train de faire
     total : int
-        Nombre total de taches à faires
+        Nombre total d'itérations pour compléter la tâche
     timing : float
         Heure de début
     length : int, optional
@@ -26,7 +34,7 @@ def progress_bar(iteration: int, total: int, timing: float, length=80):
 
 def read_image(image_path: str) -> np.ndarray:
     """
-    Ouvre l'image et la converti en niveaux de gris et en np.ndarray.
+    Ouvre l'image et la convertit en niveaux de gris et en np.ndarray.
 
     Parameters
     ----------
@@ -47,24 +55,33 @@ def read_image(image_path: str) -> np.ndarray:
     print()
     return np.array(img)
 
-def convolve(image: np.ndarray, kernel: np.ndarray, debug=True) -> np.ndarray:
+def convolve(image: np.ndarray, kernel: np.ndarray, debug=True, fast=True) -> np.ndarray:
     """
-    Applique une convolution sur l"image.
+    Applique une convolution sur l'image avec un calcul optimisé si `fast=True`.
 
     Parameters
     ----------
     image : np.ndarray
-        L'image avec 1 canal sous-entendu et 2 dimensions (i.e. image.shape == (height, width))
+        L'image avec 1 canal sous-entendu et 2 dimensions (i.e. image.shape == (height, width)).
     kernel : np.ndarray
-        La matrice de convlution à appliquer
+        La matrice de convolution à appliquer.
     debug : bool, optional
-        Permet d'afficher ou non une barre de progression, by default True. Peut impacter les performances, mais a priori négligeable
+        Affiche une barre de progression si True, par défaut True.
+    fast : bool, optional
+        Utilise une convolution rapide avec scipy.ndimage.convolve si True, par défaut True.
 
     Returns
     -------
     np.ndarray
-        L'image sous le même format mais convoluée
+        L'image convoluée.
     """
+    if fast and not scipy_available:
+        fast = False  # Bascule automatiquement si scipy est absent
+    
+    if fast:
+        image = image.astype(np.float32)
+        return scipy_convolve(image, kernel, mode='constant', cval=0.0)
+    
     kernel_height, kernel_width = kernel.shape
     pad_height, pad_width = kernel_height // 2, kernel_width // 2
     padded_image = np.zeros((image.shape[0] + 2 * pad_height, image.shape[1] + 2 * pad_width))
@@ -98,7 +115,7 @@ def calculate_max_gradient(image: np.ndarray) -> list:
 
     Returns
     -------
-    np.ndarray
+    list
         Les moyennes des normes et arguments des gradiants de l'image
     """
     sobel_x = np.array([[1, 0, -1],

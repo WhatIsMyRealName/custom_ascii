@@ -10,238 +10,225 @@ def average_kernel(n=3) -> np.ndarray:
     Parameters
     ----------
     n : int, optional
-        Taille de la matrice, by default 3
+        Taille de la matrice de lissage, par défaut 3.
 
     Returns
     -------
     np.ndarray
-        La matrice de lissage de la taille souhaitée
+        La matrice de lissage de taille `n x n`.
     """
-    return np.ones(n, n) / n / n
+    return np.ones((n, n)) / (n**2)
 
-MATRICE_DE_CONVOLUTION_DETECTION_DE_BORDS = np.array([[1, 1, 1,],
-                     [1, -8, 1],
-                     [1, 1, 1]])
+MATRICE_DE_CONVOLUTION_DETECTION_DE_BORDS = np.array([[1, 1, 1],
+                                                      [1, -8, 1],
+                                                      [1, 1, 1]])
 
 MATRICE_DE_CONVOLUTION_CONTRASTES = np.array([[0, -1, 0],
-                     [-1, 5, -1], 
-                     [0, -1, 0]])
+                                              [-1, 5, -1], 
+                                              [0, -1, 0]])
 
 def hysteresis_thresholding(gradient_image: np.ndarray, low_threshold: float, high_threshold: float) -> np.ndarray:
     """
-    Applique le suivi des contours pas hystérésis.
+    Applique le suivi des contours par hystérésis.
 
     Parameters
     ----------
     gradient_image : np.ndarray
-        L'image dont le contenu est remplacé par les gradients en chaque point
+        L'image de gradient.
     low_threshold : float
-        Seuil bas pour les contours
+        Seuil bas pour les contours faibles.
     high_threshold : float
-        Seuil haut
+        Seuil haut pour les contours forts.
 
     Returns
     -------
     np.ndarray
-        Image binaire avec les contours en blanc
+        Image binaire avec les contours marqués en blanc (255).
     """
-    strong_edges = (gradient_image >= high_threshold)  # Marque les bords sûrs
-    weak_edges = (gradient_image >= low_threshold) & ~strong_edges  # Marque les bords faibles
-
-    # Initialiser l'image de sortie avec les bords sûrs
+    strong_edges = (gradient_image >= high_threshold)
+    weak_edges = (gradient_image >= low_threshold) & ~strong_edges
     edges = np.zeros_like(gradient_image)
     edges[strong_edges] = 255
 
-    # Propager les bords sûrs aux bords faibles adjacents
     height, width = gradient_image.shape
     for i in range(1, height - 1):
         for j in range(1, width - 1):
-            if strong_edges[i, j]:  # Si c'est un bord fort, propager aux voisins
+            if strong_edges[i, j]:
                 for di in range(-1, 2):
                     for dj in range(-1, 2):
-                        if weak_edges[i + di, j + dj]:  # Si le voisin est un bord faible
-                            edges[i + di, j + dj] = 255  # Inclure ce voisin dans les contours
+                        if weak_edges[i + di, j + dj]:
+                            edges[i + di, j + dj] = 255
 
     return edges
 
 def calculate_thresholds(image: np.ndarray, low_percentile=95, high_percentile=98) -> tuple:
     """
-    Calcule les valeurs de l'image correspondant au centiles entrés en paramètre.
+    Calcule les seuils bas et haut pour une image en fonction des percentiles.
 
     Parameters
     ----------
     image : np.ndarray
-        L'image à traier
+        Image à traiter.
     low_percentile : int, optional
-        Le premier centile, bas, by default 95
+        Centile bas, par défaut 95.
     high_percentile : int, optional
-        Le second centile, haut, by default 98
+        Centile haut, par défaut 98.
 
     Returns
     -------
     tuple
-        (centile_bas, centile_haut)
+        (low_threshold, high_threshold), seuils pour les contours faibles et forts.
     """
     low_threshold = np.percentile(image, low_percentile)
     high_threshold = np.percentile(image, high_percentile)
     return low_threshold, high_threshold
 
-def map_character(gradiant: list, average_gray_level: float, color=True) -> str:
+def map_character(gradient: tuple, average_gray_level: float|None = None) -> str:
     """
-    Fais correspondre un caractère ASCII à un gradiant.
+    Associe un caractère ASCII à un gradient.
 
     Parameters
     ----------
-    gradiant : list
-        Le grandiant à convertir sous la forme [norme, argument]
-    average_gray_level : float
-        Niveau moyen de gris, utilisé si le gradiant est trop faible et si color=True
-    color : bool, optional
-        Permet de convertir aussi les parties sans bords (unies donc) en fonction de la couleur moyenne, by default True
+    gradient : tuple
+        Gradient sous la forme (norme, argument).
+    average_gray_level : float, optional
+        Niveau moyen de gris, utilisé si le gradient est faible.
 
     Returns
     -------
     str
-        Le caractère choisi.
+        Caractère ASCII correspondant.
     """
-    if gradiant[0] > 10:
+    if gradient[0] > 10:
         symbols = ['-', '/', '|', '\\']
-        index = int((gradiant[1] + 22.5) // 45) % 4
+        index = int((gradient[1] + 22.5) // 45) % 4
         return symbols[index]
+    if average_gray_level is not None:
+        grayscale = '@%#*+=-:. '
+        return grayscale[int(average_gray_level * (len(grayscale) - 1) / 255)]
     else:
-        if color:
-            grayscale = '@%#*+=-:. '
-            return grayscale[int(average_gray_level*(len(grayscale)-1)/255)]
-        else:
-            return "."
+        return "."
 
-def image_to_ascii(image: str, or_img: str, block_size=20, height_reduction_factor=0.6, color=True) -> str:
+def image_to_ascii(image: np.ndarray, or_img: np.ndarray|None = None, block_size=20, height_reduction_factor=0.6) -> str:
     """
-    Convertit l'image en ASCII. Fonction principale.
+    Convertit l'image en ASCII.
 
     Parameters
     ----------
-    image : str
-        L'image des bords
-    or_img : str
-        L'image originale (utilisée si color=True, pour avoir les niveaux de gris en plus des bords)
+    image : np.ndarray
+        Image des bords.
+    or_img : np.ndarray, optional
+        Image originale utilisée pour calculer les niveaux de gris si le gradient est faible, par défaut None
     block_size : int, optional
-        Nombre de pixels qui vont être représentés par 1 caractère ASCII, by default 20.
+        Taille des blocs de pixels pour un caractère ASCII, par défaut 20.
     height_reduction_factor : float, optional
-        Facteur d'"applatissement" de l'image pour compenser la déformation dues aux caractères ASCII, plus haut que larges, by default 0.6.
-        NOTE : ce coefficient est aussi appliqué à block_size pour rester cohérant. Basez-vous donc plutôt sur la largeur de l'image pour déterminer
-            le paramètre block_size
-    color : bool, optional
-        Pour colorier l'image, by default True. Metre à False pour ne convertir que les bords.
+        Facteur d'aplatissement de l'image pour correspondre à la largeur des caractères ASCII, par défaut 0.6.
 
     Returns
     -------
     str
-        L'image convertie
+        Représentation ASCII de l'image.
     """
     height, width = image.shape
     ascii_art = ""
     print("Conversion de l'image en ASCII...")
-    yspeed = int(block_size/height_reduction_factor)
-    notexact = (height % yspeed)!=0
+    yspeed = int(block_size / height_reduction_factor)
+    notexact = (height % yspeed) != 0
     timing = time.time()
     for i in range(0, height, yspeed):
         for j in range(0, width, block_size):
             block = image[i:min(i + yspeed, height), j:min(j + block_size, width)]
-            or_block = or_img[i:min(i + yspeed, height), j:min(j + block_size, width)]
-            magnitude, angle = calculate_max_gradient(block)
-            average_gray_level = np.mean(or_block)
-            char = map_character((magnitude, angle), average_gray_level, color)
+            if or_img is not None:
+                magnitude, angle = calculate_max_gradient(block)
+                or_block = or_img[i:min(i + yspeed, height), j:min(j + block_size, width)]
+                average_gray_level = np.mean(or_block)
+                char = map_character((magnitude, angle), average_gray_level)
+            else:
+                magnitude, angle = calculate_max_gradient(block)
+                char = map_character((magnitude, angle))
             ascii_art += char
         ascii_art += "\n"
-        progress_bar(i // yspeed, height // yspeed + 1*notexact, timing)
-    progress_bar(1, 1, timing) # juste pour avoir un affichage cohérant
-    print() 
+        progress_bar(i // yspeed, height // yspeed + 1 * notexact, timing)
+    progress_bar(1, 1, timing)
+    print()
     return ascii_art
 
 def display_ascii_art(ascii_art: str) -> None:
     """
-    Affiche l'image dans la console.
+    Affiche l'art ASCII dans la console.
 
     Parameters
     ----------
     ascii_art : str
-        L'image ASCII à afficher
+        Représentation ASCII de l'image.
     """
     print(ascii_art)
 
 def save_ascii_art(ascii_art: str, name="result") -> None:
     """
-    Enregistre l'image ASCII.
+    Enregistre l'art ASCII dans un fichier texte.
 
     Parameters
     ----------
     ascii_art : str
-        L'image ASCII à enregistrer
+        Représentation ASCII de l'image.
     name : str, optional
-        Chemin vers le fichier d'enregistrement, by default "result". Sera créé si besoin, écrasé si nécessaire.
-        NOTE : Attention, sur VSCode, il faut mettre le chemin par rapport au dossier ouvert, pas pas rapport au fichier. Sur IDLE,
-            le chemin relatif suffit.
+        Nom de fichier, par défaut "result".
     """
     with open(f'{name}.txt', 'w') as f:
         f.write(ascii_art)
 
-# from scipy.ndimage import convolve as convolveCheat
-
-def main(image_path: str, block_size=20, color=True):
+def main(image_path: str, block_size=20, color=True, fast=True, height_reduction_factor=0.6):
     """
-    Permet de tester le code ou de servir d'exemple en utilisant les fonctions précédentes.
+    Convertit une image en ASCII et affiche les étapes de traitement.
 
     Parameters
     ----------
     image_path : str
-        Chemin vers l'image à convertir
-        NOTE : Attention, sur VSCode, il faut mettre le chemin par rapport au dossier ouvert, pas pas rapport au fichier. Sur IDLE,
-            le chemin relatif suffit.
+        Chemin vers l'image à convertir.
     block_size : int, optional
-        Nombre de pixels qui vont être représentés par 1 caractère ASCII, by default 20.
+        Taille des blocs de pixels pour un caractère ASCII, par défaut 20.
     color : bool, optional
-        Pour colorier l'image, by default True. Metre à False pour ne convertir que les bords.
+        Appliquer le niveau de gris moyen, par défaut True.
+    fast : bool, optional
+        Mode rapide de convolution.
+    height_reduction_factor : float, optional
+        Facteur d'aplatissement de l'image.
     """
     image = read_image(image_path)
-    smoothed_image = np.clip(convolve(image, average_kernel()), 0, 255)
-    contrasted_image = np.clip(convolve(smoothed_image, MATRICE_DE_CONVOLUTION_CONTRASTES), 0, 255)
-    test = np.clip(convolve(contrasted_image, MATRICE_DE_CONVOLUTION_DETECTION_DE_BORDS), 0, 255)
+    smoothed_image = np.clip(convolve(image, average_kernel(), fast=fast), 0, 255)
+    contrasted_image = np.clip(convolve(smoothed_image, MATRICE_DE_CONVOLUTION_CONTRASTES, fast=fast), 0, 255)
+    test = np.clip(convolve(contrasted_image, MATRICE_DE_CONVOLUTION_DETECTION_DE_BORDS, fast=fast), 0, 255)
 
     low_threshold, high_threshold = calculate_thresholds(test)
     final_edges = hysteresis_thresholding(test, low_threshold, high_threshold)
-    # sans hystérésis :
-    #print("Moyenne des normes des gradiants des bords détectés : ", np.mean(np.abs(test)[test != 0]))
-    #result_image = np.where(np.abs(test) > 75, 255, 0) # remplacer 75 par la moyenne calculée ci-dessus, mais généralement pas trop mal pour un premier test
-    #result_image = result_image.astype(np.uint8)
-    ascii_art = image_to_ascii(final_edges, image, block_size, color=color)
+
+    ascii_art = image_to_ascii(final_edges, image if color else None, block_size, height_reduction_factor)
     display_ascii_art(ascii_art)
     save_ascii_art(ascii_art)
 
-    # Affichage de débogage :
-    fig = plt.figure(figsize=(10, 10)) 
-    fig.add_subplot(2, 2, 1) 
-    plt.imshow(image, cmap="gray") 
-    plt.axis('off') 
-    plt.title("Image") 
+    fig = plt.figure(figsize=(10, 10))
+    fig.add_subplot(2, 2, 1)
+    plt.imshow(image, cmap="gray")
+    plt.axis('off')
+    plt.title("Image")
 
-    fig.add_subplot(2, 2, 2) 
-    plt.imshow(smoothed_image, cmap="gray") 
-    plt.axis('off') 
+    fig.add_subplot(2, 2, 2)
+    plt.imshow(smoothed_image, cmap="gray")
+    plt.axis('off')
     plt.title("Image lissée")
 
-    fig.add_subplot(2, 2, 3) 
-    plt.imshow(contrasted_image, cmap="gray") 
-    plt.axis('off') 
-    plt.title("Image contrastée") 
+    fig.add_subplot(2, 2, 3)
+    plt.imshow(contrasted_image, cmap="gray")
+    plt.axis('off')
+    plt.title("Image contrastée")
 
-    fig.add_subplot(2, 2, 4) 
-    plt.imshow(final_edges, cmap="gray") 
-    plt.axis('off') 
+    fig.add_subplot(2, 2, 4)
+    plt.imshow(final_edges, cmap="gray")
+    plt.axis('off')
     plt.title("Bords")
 
     plt.show()
 
-# main('image.jpg', block_size=8 ,color=True)
 if __name__ == '__main__':
-    main('image.jpg', block_size=8 ,color=True)
+    main('chartest5.png', block_size=8, color=True, fast=True)
