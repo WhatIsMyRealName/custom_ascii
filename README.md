@@ -1,6 +1,6 @@
 # Examples:
 
-This is the main function signature: `main(image_path: str, block_size=20, color=True, fast=True, height_reduction_factor=0.4)`
+This is the main function signature: `main(image_path: str, block_size=20, color=True, fast=True, height_reduction_factor=0.6)`
 
 ## Here are some examples:
 
