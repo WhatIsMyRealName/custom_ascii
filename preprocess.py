@@ -9,7 +9,7 @@ try:
 except ImportError:
     scipy_available = False
     warnings.warn("""\033[93m\nScipy n'est pas disponible. Le paramètre fast est automatiquement corrigé en False.
-Exécutez 'pip install scipy' '!pip install scipy' ou 'py -m pip install scipy' pour pouvoir utiliser fast=True.\033[0m""", category=UserWarning)
+Si pip est installé, exécutez 'pip install scipy', '!pip install scipy' ou 'py -m pip install scipy' pour pouvoir utiliser fast=True.\033[0m""", category=UserWarning)
 
 def progress_bar(iteration: int, total: int, timing: float, length=80):
     """
@@ -24,7 +24,7 @@ def progress_bar(iteration: int, total: int, timing: float, length=80):
     timing : float
         Heure de début
     length : int, optional
-        Longueur de la barre dans la console, by default 80
+        Longueur de la barre dans la console, par défaut 80
     """
     percent = (iteration / total) * 100
     filled_length = int(length * iteration // total)
@@ -80,7 +80,7 @@ def convolve(image: np.ndarray, kernel: np.ndarray, debug=True, fast=True) -> np
     
     if fast:
         image = image.astype(np.float32)
-        return scipy_convolve(image, kernel, mode='constant', cval=0.0)
+        return scipy_convolve(image, kernel, mode='nearest', cval=0.0) # type: ignore # noter que la convolution manuelle utilise le mode constant
     
     kernel_height, kernel_width = kernel.shape
     pad_height, pad_width = kernel_height // 2, kernel_width // 2
@@ -97,12 +97,12 @@ def convolve(image: np.ndarray, kernel: np.ndarray, debug=True, fast=True) -> np
         for j in range(image.shape[1]):
             region = padded_image[i:i + kernel_height, j:j + kernel_width]
             output[i, j] = np.sum(region * kernel)  # "Produit" matriciel
-        if debug==True: progress_bar(i + 1, image.shape[0], timing) 
+        if debug==True: progress_bar(i + 1, image.shape[0], timing)  # type: ignore
     if debug==True:
         print()
     return output
 
-def calculate_max_gradient(image: np.ndarray) -> list:
+def calculate_max_gradient(image: np.ndarray) -> tuple:
     """
     NOTE : cette version devrait être renommée calculate_mean_gradient.
 
@@ -121,12 +121,24 @@ def calculate_max_gradient(image: np.ndarray) -> list:
     sobel_x = np.array([[1, 0, -1],
                          [2, 0, -2],
                          [1, 0, -1]])
-
     sobel_y = np.array([[1, 2, 1],
                          [0, 0, 0],
                          [-1, -2, -1]])
     x = convolve(image, sobel_x, False)
     y = convolve(image, sobel_y, False)
-    gradient_magnitude = np.mean(np.sqrt(x**2 + y**2))
-    gradient_angle = np.mean(np.arctan2(y, x) * 180 / np.pi)
-    return [gradient_magnitude, gradient_angle]
+    magnitudes = np.sqrt(x**2 + y**2)
+    gradient_magnitude = np.mean(magnitudes)
+    test = np.arctan2(y, x) * 180 / np.pi
+    
+    indices = magnitudes != 0
+    try: # marche mais on a quand même le warning. Pasla priorité mais regarder comment corriger ça.
+        gradient_angle = np.mean(test[indices] % 180)
+    except RuntimeWarning:
+        gradient_angle = -1 # Valeur arbitraire qui sera de toute façon ignorée par le fait que la magnitude est nulle
+        
+    """
+    angles_positive = test[np.where(test > 157.5)] - 180
+    angles_negative = test[np.where(test < -22.5)] + 180
+    gradient_angle = np.mean(np.concatenate((angles_positive, angles_negative, angles_in_range)))
+    """
+    return (gradient_magnitude, gradient_angle)
